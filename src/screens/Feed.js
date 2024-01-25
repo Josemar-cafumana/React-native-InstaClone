@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, Dimensions } from "react-native";
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import Header from "../components/Header";
 import Stories from "../components/Stories";
 import { USERS } from "../data/Users";
@@ -8,34 +8,43 @@ import { POSTS } from "../data/Posts";
 import { FlatList } from "react-native";
 import { ScrollView } from "native-base";
 import { StatusBar } from "react-native";
-import { FIREBASE_AUTH, FIREBASE_STORE } from "../../firebase";
-import { collection, collectionGroup, getDocs } from "firebase/firestore";
+import { db, firebase } from "../../firebase";
+import Loading from "../components/Loading";
 
-const Feed = () => {
-  const auth = FIREBASE_AUTH;
-  const db = FIREBASE_STORE;
+const Feed = ({ navigation }) => {
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetchData()
-  },[])
+    setLoading(true);
+  
+    const unsubscribe = db.collectionGroup("posts")
+      .onSnapshot((snapshot) => {
 
-  const fetchData = async () => {
-    const querySnapshot = await getDocs(collectionGroup(db, "posts"));
+        setPosts(
+          snapshot.docs.map((post) => ({
+            id: post.id,
+            ...post.data(),
+          }))
+        );
+  
 
-    querySnapshot.forEach((doc) => {  
-      console.log(JSON.stringify(doc.data()))
-      
-    });
-  }
+        setLoading(false);
+      });
+  
 
-  return (
-    <View style={styles.container}>
-      <ScrollView width={Dimensions.get("window").width}
-      showsVerticalScrollIndicator={false}
-      >
-        <StatusBar barStyle="light-content" />
-        <Header />
+    return () => unsubscribe();
+  }, []);
+  
 
+ return (
+  <View style={styles.container}>
+    <StatusBar barStyle="light-content" />
+    <Header  navigation={navigation}/>
+    {loading && <Loading />}
+    
+    <FlatList
+      ListHeaderComponent={() => (
         <FlatList
           horizontal
           data={USERS}
@@ -43,15 +52,16 @@ const Feed = () => {
           renderItem={({ item }) => <Stories {...item} />}
           style={{ marginBottom: 5 }}
         />
+      )}
+      data={posts}
+      keyExtractor={(item) => item.id}
+      renderItem={({ item }) => <Post {...item} />}
+    />
+  </View>
+);
 
-        <FlatList
-          data={POSTS}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <Post {...item} />}
-        />
-      </ScrollView>
-    </View>
-  );
+  
+
 };
 
 const styles = StyleSheet.create({

@@ -1,39 +1,92 @@
-import { View, StyleSheet, Text, Platform, SafeAreaView, Alert } from "react-native";
-import { Badge, Icon } from '@rneui/themed';
-import { TouchableOpacity } from "react-native-gesture-handler";
-import { FIREBASE_AUTH } from "../../firebase";
+import {
+  View,
+  StyleSheet,
+  Text,
+  Platform,
+  SafeAreaView,
+  Alert,
+} from "react-native";
+import { Badge, Icon } from "@rneui/themed";
+import { TouchableOpacity, TouchableWithoutFeedback } from "react-native-gesture-handler";
+import { firebase } from "../../firebase";
 
-export default function Header() {
-  const auth = FIREBASE_AUTH;
-
+export default function Header({ navigation, mode = 'default' }) {
   const logout = async () => {
     try {
-      await auth.signOut()
+      await firebase.auth().signOut();
     } catch (error) {
-      Alert.alert(error.message)
+      Alert.alert(error.message);
     }
-  }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
-      <TouchableOpacity onPress={logout} style={styles.rowContainer}>
+      <View style={styles.rowContainer}>
         <Text style={styles.title}>Instagram</Text>
-        <Icon style={{ marginLeft: 8,  paddingTop: 3}} name="expand-more"  size={20} color="#fff" />
-      </TouchableOpacity>
+        <Icon
+          style={{ marginLeft: 8, paddingTop: 3 }}
+          name="expand-more"
+          size={20}
+          color="#fff"
+        />
+      </View>
 
       <View style={styles.rowContainer}>
-        <Icon type="feather" style={{ marginRight: 8}} name="plus-square"  size={25} color="#fff" />
-        <Icon type="feather" style={{ marginRight: 8, borderColor: 'red'}} name="heart"  size={25} color="#fff" />
+        <TouchableWithoutFeedback onPress={() => navigation.navigate('add')}>
+        <Icon
+          type="feather"
+          style={{ marginRight: 8 }}
+          name="plus-square"
+          size={25}
+          color="#fff"
+        />
+        </TouchableWithoutFeedback>
+        
+        {mode === 'default' && (
+          <>
+          <Icon
+          type="feather"
+          style={{ marginRight: 8, borderColor: "red" }}
+          name="heart"
+          size={25}
+          color="#fff"
+        />
         <View>
-        <Icon type="feather" style={{ marginRight: 0}} name="message-circle"  size={25} color="#fff" />
-        <Badge
+          <Icon
+            type="feather"
+            style={{ marginRight: 0 }}
+            name="message-circle"
+            size={25}
+            color="#fff"
+          />
+          <Badge
             status="error"
             value={10}
-            containerStyle={{ position: 'absolute', top: -7, left: 10, borderWidth: 0 }}
-            badgeStyle={{ borderColor: 'red'}}
+            containerStyle={{
+              position: "absolute",
+              top: -7,
+              left: 10,
+              borderWidth: 0,
+            }}
+            badgeStyle={{ borderColor: "red" }}
           />
         </View>
-       
+        </>
+        )}
+
+{mode === 'profile' && (
+    <TouchableOpacity onPress={logout}>
+   <Icon
+   type="material"
+   style={{ marginRight: 8, borderColor: "red" }}
+   name="logout"
+   size={25}
+   color="#fff"
+ />
+ </TouchableOpacity>
+)}
+
+        
       </View>
     </SafeAreaView>
   );
@@ -41,7 +94,7 @@ export default function Header() {
 
 const styles = StyleSheet.create({
   container: {
-    width: '100%',
+    width: "100%",
     flexDirection: "row",
     justifyContent: "space-between",
     backgroundColor: "#000",

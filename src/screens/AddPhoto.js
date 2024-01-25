@@ -12,14 +12,14 @@ import {
   Animated,
   Easing,
   KeyboardAvoidingView,
+  Alert,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { MaterialIcons } from "@expo/vector-icons";
 import { Box, TextArea, Button } from "native-base";
 import { StatusBar } from "react-native";
-import { getDownloadURL, ref, uploadBytesResumable } from "firebase/storage";
-import { FIREBASE_AUTH, FIREBASE_STORAGE, FIREBASE_STORE } from "../../firebase";
-import { getDoc } from "firebase/firestore";
+import { db, firebase } from "../../firebase";
+import Loading from "../components/Loading";
 
 export default function AddPhoto({ navigation }) {
   const [image, setImage] = useState(null);
@@ -29,11 +29,12 @@ export default function AddPhoto({ navigation }) {
   const scale = useRef(new Animated.Value(0)).current;
   const textAreaRef = useRef(null);
   const [isFocused, setIsFocused] = useState(false);
-  const [currentUser, setCurrentUser] = useState('');
+  const [currentUser, setCurrentUser] = useState("");
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    getUsername()
-  }, [])
+    getUsername();
+  }, []);
   const handleFocus = () => {
     setIsFocused(true);
   };
@@ -56,16 +57,23 @@ export default function AddPhoto({ navigation }) {
   }
 
   const getUsername = async () => {
-    const user = FIREBASE_AUTH.currentUser
-    const q = query(collection(FIREBASE_STORE, "users"), where("ownwer_uid", "==", user.uid));
-    const querySnapshot = await getDoc(q);
-    querySnapshot.forEach((doc) => {
-      setCurrentUser(doc.data())
-      // doc.data() is never undefined for query doc snapshots
-      console.log(doc.id, " => ", doc.data());
-    });
+    const user = firebase.auth().currentUser;
 
-  }
+    const unsubscribe = db
+      .collection("users")
+      .where("owner_uid", "==", user.uid)
+      .limit(1)
+      .onSnapshot((snapshot) =>
+        snapshot.docs.map((doc) => {
+          setCurrentUser({
+            username: doc.data().username,
+            profile_picture: doc.data().profile_picture,
+          });
+        })
+      );
+
+    return unsubscribe;
+  };
 
   const pickImage = async () => {
     // No permissions request is necessary for launching the image library
@@ -74,38 +82,16 @@ export default function AddPhoto({ navigation }) {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [4, 3],
-      quality: 1,
+      quality: 0,
     });
 
-    console.log(result);
+  
 
     if (!result.canceled) {
       setImage(result.assets[0].uri);
-      await uploadImage(result.assets[0].uri)
       resizeBox(0);
     }
   };
-
-  const uploadImage = async (uri) => {
-    const response = await fetch(uri)
-    const blob = response.blob();
-
-    const storageRef = ref(FIREBASE_STORAGE, 'posts/' + new Date().getTime())
-    const uploadTask = uploadBytesResumable(storageRef, blob);
-
-    uploadTask.on("state_changed", (snapshot) => {
-      
-    },
-    (error) => {
-
-    },
-    () => {
-      getDownloadURL(uploadTask.snapshot.ref).then(async (download) => {
-        console.log("Imagem ",download)
-        setImageUrl(download)
-      })
-    })
-  }
 
   const takePhoto = async () => {
     // No permissions request is necessary for launching the image library
@@ -114,145 +100,204 @@ export default function AddPhoto({ navigation }) {
       cameraType: ImagePicker.CameraType.front,
       allowsEditing: true,
       aspect: [4, 3],
-      quality: 1,
+      quality: 0,
     });
-
 
     if (!result.canceled) {
       setImage(result.assets[0].uri);
-      await uploadImage(result.assets[0].uri)
       resizeBox(0);
     }
   };
 
-  const savePost = async () => {
-    const data = {
-      caption,
-      image,
-      imageUrl
-    };
+  const uploadImage = async (image) => {
+    try {
+      const response = await fetch(image.uri);
+      const blob = await response.blob();
 
-    
-    console.warn(data);
+      const filename = image.uri.substring(image.uri.lastIndexOf("/") + 1);
+
+      const storageRef = firebase.storage().ref().child(filename);
+
+      const uploadTaskSnapshot = await storageRef.put(blob);
+
+      const downloadURL = await uploadTaskSnapshot.ref.getDownloadURL();
+
+      setImageUrl(downloadURL);
+      return downloadURL;
+    } catch (error) {
+      console.error("Erro ao enviar imagem:", error);
+    }
+  };
+
+
+
+  const savePost = async () => {
+    getUsername();
+
+    if (!image) {
+      Alert.alert("Adicione uma imagem na publicação");
+      return;
+    }
+
+    setLoading(true);
+    let urlImage;
+    try {
+      let source = { uri: image };
+      urlImage = await uploadImage(source);
+    } catch (error) {
+      Alert.alert("Erro durante o envio da imagem: " + error);
+      return;
+    }
+
+    const unsubscribe = db
+      .collection("users")
+      .doc(firebase.auth().currentUser.email)
+      .collection("posts")
+      .add({
+        username: currentUser.username,
+        profilePhoto: currentUser.profile_picture,
+        isVerified: false,
+        localization: "Angola",
+        owner_email: firebase.auth().currentUser.email,
+        image: urlImage,
+        caption: caption,
+        owner_uid: firebase.auth().currentUser.uid,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        likes: 0,
+        likes_by_users: [],
+        comments: [],
+      })
+      .then(() => {
+        setCaption(null);
+        setImage(null);
+        setImageUrl(null);
+        navigation.goBack();
+      })
+      .catch((e) => Alert.alert(e.message))
+      .finally(() => setLoading(false));
   };
 
   return (
-    <View
-      style={{
-        flex: 1,
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: "#000",
-      }}
-    >
-      <SafeAreaView
-        style={{ flex: 1, alignItems: "center", backgroundColor: "#000" }}
+    <>
+      <View
+        style={{
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: "#000",
+        }}
       >
-        <StatusBar barStyle="light-content" />
-        <KeyboardAvoidingView
-          keyboardVerticalOffset={-150}
-          behavior="position"
-          contentContainerStyle={{
-            flex: 1,
-            alignItems: "center",
-            backgroundColor: "#000",
-          }}
+        <SafeAreaView
+          style={{ flex: 1, alignItems: "center", backgroundColor: "#000" }}
         >
-          <TouchableOpacity
-            onPress={() => navigation.navigate("home")}
-            style={{ left: 0, top: 23, position: "absolute" }}
+          <StatusBar barStyle="light-content" />
+          <KeyboardAvoidingView
+            keyboardVerticalOffset={-150}
+            behavior="position"
+            contentContainerStyle={{
+              flex: 1,
+              alignItems: "center",
+              backgroundColor: "#000",
+            }}
           >
-            <Text>
-              <MaterialIcons name="arrow-back-ios" color="white" size={25} />
-            </Text>
-          </TouchableOpacity>
-          <Text style={styles.title}>Nova publicação</Text>
-          {image ? (
-            <Image
-              onTouchStart={() => resizeBox(1)}
-              source={{ uri: image }}
-              style={styles.image}
-            />
-          ) : (
-            <View style={styles.image} onTouchStart={() => resizeBox(1)}>
-              <MaterialIcons name="photo-camera" size={50} />
-            </View>
-          )}
-
-          <Box alignItems="center" w="100%" my={3}>
-            {isFocused && (
-              <View style={{ right: 0 }} onTouchStart={handleBlur}>
-                <MaterialIcons name="close" color="white" size={20} />
+            <TouchableOpacity
+              onPress={() => navigation.navigate("home")}
+              style={{ left: 0, top: 23, position: "absolute" }}
+            >
+              <Text>
+                <MaterialIcons name="arrow-back-ios" color="white" size={25} />
+              </Text>
+            </TouchableOpacity>
+            <Text style={styles.title}>Nova publicação</Text>
+            {image ? (
+              <Image
+                onTouchStart={() => resizeBox(1)}
+                source={{ uri: image }}
+                style={styles.image}
+              />
+            ) : (
+              <View style={styles.image} onTouchStart={() => resizeBox(1)}>
+                <MaterialIcons name="photo-camera" size={50} />
               </View>
             )}
-            <TextArea
-              ref={textAreaRef}
-              h={20}
-              placeholder="Escreve uma legenda..."
-              w="100%"
-              focusOutlineColor="black"
-              backgroundColor="black"
-              borderColor="dark.100"
-              borderWidth={0}
-              borderBottomWidth={1}
-              onFocus={handleFocus}
-              color="white"
-              value={caption}
-              onChangeText={(c) => setCaption(c)}
-              style={{ borderWidth: 0 }}
-            />
-          </Box>
 
-          <Box
-            alignItems="center"
-            w={(Dimensions.get("window").width * 0.95) / 1}
-          >
-            <Button
-              size={"lg"}
-              backgroundColor="info.600"
-              w="full"
-              onPress={savePost}
-            >
-              Partilhar
-            </Button>
-          </Box>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
+            <Box alignItems="center" w="100%" my={3}>
+              {isFocused && (
+                <View style={{ right: 0 }} onTouchStart={handleBlur}>
+                  <MaterialIcons name="close" color="white" size={20} />
+                </View>
+              )}
+              <TextArea
+                ref={textAreaRef}
+                h={20}
+                placeholder="Escreve uma legenda..."
+                w="100%"
+                focusOutlineColor="black"
+                backgroundColor="black"
+                borderColor="dark.100"
+                borderWidth={0}
+                borderBottomWidth={1}
+                onFocus={handleFocus}
+                color="white"
+                value={caption}
+                onChangeText={(c) => setCaption(c)}
+                style={{ borderWidth: 0 }}
+              />
+            </Box>
 
-      <Modal transparent visible={visible}>
-        <TouchableOpacity style={{ flex: 1 }} onPress={() => resizeBox(0)}>
-          <Animated.View
-            style={[
-              styles.popup,
-              {
-                opacity: scale.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, 1],
-                }),
-              },
-              {
-                transform: [{ scale }],
-              },
-            ]}
-          >
-            <TouchableOpacity
-              style={styles.optionContainer}
-              onPress={() => takePhoto()}
+            <Box
+              alignItems="center"
+              w={(Dimensions.get("window").width * 0.95) / 1}
             >
-              <Text style={styles.optionText}>Câmera</Text>
-              <MaterialIcons name="photo-camera" size={20} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.optionContainer}
-              onPress={pickImage}
+              <Button
+                size={"lg"}
+                backgroundColor="info.600"
+                w="full"
+                onPress={savePost}
+              >
+                Partilhar
+              </Button>
+            </Box>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+
+        <Modal transparent visible={visible}>
+          <TouchableOpacity style={{ flex: 1 }} onPress={() => resizeBox(0)}>
+            <Animated.View
+              style={[
+                styles.popup,
+                {
+                  opacity: scale.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, 1],
+                  }),
+                },
+                {
+                  transform: [{ scale }],
+                },
+              ]}
             >
-              <Text style={styles.optionText}>Galeria</Text>
-              <MaterialIcons name="grid-view" size={20} />
-            </TouchableOpacity>
-          </Animated.View>
-        </TouchableOpacity>
-      </Modal>
-    </View>
+              <TouchableOpacity
+                style={styles.optionContainer}
+                onPress={() => takePhoto()}
+              >
+                <Text style={styles.optionText}>Câmera</Text>
+                <MaterialIcons name="photo-camera" size={20} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.optionContainer}
+                onPress={pickImage}
+              >
+                <Text style={styles.optionText}>Galeria</Text>
+                <MaterialIcons name="grid-view" size={20} />
+              </TouchableOpacity>
+            </Animated.View>
+          </TouchableOpacity>
+        </Modal>
+      </View>
+
+      {loading && <Loading />}
+    </>
   );
 }
 

@@ -8,25 +8,22 @@ import { createStackNavigator } from "@react-navigation/stack";
 import Login from "./screens/Login";
 import Register from "./screens/Register";
 import { useEffect, useState } from "react";
-import { FIREBASE_AUTH } from "../firebase";
-import { onAuthStateChanged } from "firebase/auth";
+import { db, firebase } from "../firebase";
+import Profile from "./screens/Profile";
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
 export function StackRoutes() {
-  const auth = FIREBASE_AUTH;
   const [currentUser, setCurrentUser] = useState(null);
 
-  useEffect(() => {
-    onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setCurrentUser(user);
-      } else {
-        setCurrentUser(user);
-      }
-    });
-  }, []);
+  const userHandler = (user) =>
+    user ? setCurrentUser(user) : setCurrentUser(null);
+
+  useEffect(
+    () => firebase.auth().onAuthStateChanged((user) => userHandler(user)),
+    []
+  );
 
   return (
     <Stack.Navigator
@@ -48,6 +45,24 @@ export function StackRoutes() {
 }
 
 export function TabRoutes() {
+  const [image, setImage] = useState(null);
+
+  useEffect(() => {
+    const user = firebase.auth().currentUser;
+
+    const unsubscribe = db
+      .collection("users")
+      .where("owner_uid", "==", user.uid)
+      .limit(1)
+      .onSnapshot((snapshot) =>
+        snapshot.docs.map((doc) => {
+          setImage(doc.data().profile_picture)
+          
+        })
+      );
+
+   
+  },[])
   return (
     <Tab.Navigator
       screenOptions={{
@@ -100,14 +115,14 @@ export function TabRoutes() {
       />
 
       <Tab.Screen
-        name="TelaF"
-        component={Feed}
+        name="Profile"
+        component={Profile}
         options={{
           tabBarIcon: ({ color, size }) => (
             <Avatar
               size={28}
               rounded
-              source={{ uri: "https://randomuser.me/api/portraits/men/36.jpg" }}
+              source={{ uri: image }}
             />
           ),
         }}

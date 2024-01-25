@@ -24,9 +24,8 @@ import { TouchableOpacity } from "react-native-gesture-handler";
 import { useForm, Controller } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
 import * as yup from "yup";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { FIREBASE_AUTH, FIREBASE_STORE } from "../../firebase";
-import { addDoc, collection, doc, setDoc } from "firebase/firestore";
+import { db, firebase } from "../../firebase";
+import Loading from "../components/Loading";
 
 const schema = yup.object({
   username: yup.string("").required("Informe o nome de usuário"),
@@ -41,6 +40,8 @@ const schema = yup.object({
 });
 const Register = ({ navigation }) => {
   const [show, setShow] = useState(false);
+  const [loading, setLoading] = useState(false);
+
   const {
     control,
     reset,
@@ -50,31 +51,29 @@ const Register = ({ navigation }) => {
     resolver: yupResolver(schema),
   });
 
-  const auth = FIREBASE_AUTH;
-  const db = FIREBASE_STORE;
-
-  const onSubmit = async ({ email, password, username}) => {
+  const onSubmit = async ({ email, password, username }) => {
     try {
-      const authUser = await createUserWithEmailAndPassword(auth,email, password)
-      
-       await setDoc(doc(db, "userPosts",  authUser.user.email ), {
+      setLoading(true)
+      const authUser = await firebase
+        .auth()
+        .createUserWithEmailAndPassword(email, password);
+
+      db.collection("users").doc(authUser.user.email).set({
         owner_uid: authUser.user.uid,
         username: username,
         email: authUser.user.email,
-        profile_picture: 'https://randomuser.me/api/portraits/men/36.jpg'
+        profile_picture: "https://t3.ftcdn.net/jpg/03/53/11/00/360_F_353110097_nbpmfn9iHlxef4EDIhXB1tdTD0lcWhG9.jpg",
       });
-    
+      setLoading(false)
     } catch (e) {
-      Alert.alert(e.message)
-      console.log(e.message)
+      setLoading(false)
+      Alert.alert(e.message);
     }
-    navigation.push('Login')
-    //console.log(email, password)
-};
-
+  };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <>
+     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
       <View style={styles.logoContainer}>
         <Image source={require("../../assets/img/instagram.png")} />
@@ -162,7 +161,7 @@ const Register = ({ navigation }) => {
         </FormControl>
 
         <View style={{ alignItems: "flex-end", marginBottom: 30 }}>
-          <Text style={{ color: "#6bb0f5" }}>Forgot password?</Text>
+          <Text style={{ color: "#6bb0f5" }}>Esqueceu sua senha?</Text>
         </View>
 
         <Button
@@ -179,17 +178,21 @@ const Register = ({ navigation }) => {
           mb={5}
           w="full"
         >
-          Register
+          Cadastrar
         </Button>
 
         <View style={styles.signupContainer}>
-          <Text>Already have an account?</Text>
+          <Text>já possui uma conta?</Text>
           <TouchableOpacity onPress={() => navigation.push("Login")}>
-            <Text style={{ color: "#6bb0f5" }}> Sign In</Text>
+            <Text style={{ color: "#6bb0f5" }}> Entrar</Text>
           </TouchableOpacity>
         </View>
       </View>
     </SafeAreaView>
+
+    {loading && <Loading />}
+    </>
+   
   );
 };
 
@@ -198,7 +201,7 @@ const styles = StyleSheet.create({
   logoContainer: {
     alignItems: "center",
     justifyContent: "center",
-    marginVertical: 50,
+    marginVertical: 80,
   },
   formContainer: {
     paddingHorizontal: 10,
